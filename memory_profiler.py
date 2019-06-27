@@ -109,7 +109,10 @@ def _get_child_memory(process, meminfo_attr=None):
     # Loop over the child processes and yield their memory
     try:
         for child in getattr(process, children_attr)(recursive=True):
-            yield getattr(child, meminfo_attr)()[0] / _TWO_20
+            mem_info = getattr(child, meminfo_attr)()
+            mem_type = 'pss' if hasattr(mem_info, 'pss') else 'rss'
+            mem = getattr(mem_info, mem_type) / _TWO_20
+            yield mem / _TWO_20
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         # https://github.com/fabianp/memory_profiler/issues/71
         yield 0.0
@@ -138,7 +141,9 @@ def _get_memory(pid, backend, timestamps=False, include_children=False, filename
             # in psutil > 2.0 and accessing it will cause exception.
             meminfo_attr = 'memory_info' if hasattr(process, 'memory_info') \
                 else 'get_memory_info'
-            mem = getattr(process, meminfo_attr)()[0] / _TWO_20
+            mem_info = getattr(process, meminfo_attr)()
+            mem_type = 'pss' if hasattr(mem_info, 'pss') else 'rss'
+            mem = getattr(mem_info, mem_type) / _TWO_20
             if include_children:
                 mem +=  sum(_get_child_memory(process, meminfo_attr))
             if timestamps:
