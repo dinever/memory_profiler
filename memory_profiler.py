@@ -100,7 +100,7 @@ def _get_child_memory(process, meminfo_attr=None):
 
     if not meminfo_attr:
         # Use the psutil 2.0 attr if the older version isn't passed in.
-        meminfo_attr = 'memory_info' if hasattr(process, 'memory_info') else 'get_memory_info'
+        meminfo_attr = 'memory_full_info' if hasattr(process, 'memory_full_info') else 'get_memory_info'
 
     # Select the psutil function get the children similar to how we selected
     # the memory_info attr (a change from excepting the AttributeError).
@@ -135,24 +135,26 @@ def _get_memory(pid, backend, timestamps=False, include_children=False, filename
 
     def ps_util_tool():
         # .. cross-platform but but requires psutil ..
-        process = psutil.Process(pid)
-        try:
-            # avoid using get_memory_info since it does not exists
-            # in psutil > 2.0 and accessing it will cause exception.
-            meminfo_attr = 'memory_info' if hasattr(process, 'memory_info') \
-                else 'get_memory_info'
-            mem_info = getattr(process, meminfo_attr)()
-            mem_type = 'pss' if hasattr(mem_info, 'pss') else 'rss'
-            mem = getattr(mem_info, mem_type) / _TWO_20
-            if include_children:
-                mem +=  sum(_get_child_memory(process, meminfo_attr))
-            if timestamps:
-                return mem, time.time()
-            else:
-                return mem
-        except psutil.AccessDenied:
-            pass
-            # continue and try to get this from ps
+        mem = psutil.virtual_memory()
+        return mem.used / _TWO_20, time.time()
+        # process = psutil.Process(pid)
+        # try:
+        #     # avoid using get_memory_info since it does not exists
+        #     # in psutil > 2.0 and accessing it will cause exception.
+        #     meminfo_attr = 'memory_full_info' if hasattr(process, 'memory_full_info') \
+        #         else 'get_memory_info'
+        #     mem_info = getattr(process, meminfo_attr)()
+        #     mem_type = 'pss' if hasattr(mem_info, 'pss') else 'rss'
+        #     mem = getattr(mem_info, mem_type) / _TWO_20
+        #     if include_children:
+        #         mem +=  sum(_get_child_memory(process, meminfo_attr))
+        #     if timestamps:
+        #         return mem, time.time()
+        #     else:
+        #         return mem
+        # except psutil.AccessDenied:
+        #     pass
+        #     # continue and try to get this from ps
 
     def posix_tool():
         # .. scary stuff ..
@@ -360,14 +362,19 @@ def memory_usage(proc=-1, interval=.1, timeout=None, timestamps=False,
     elif isinstance(proc, subprocess.Popen):
         # external process, launched from Python
         line_count = 0
+        initial_mem_usage, _ = _get_memory(
+                proc.pid, backend, timestamps=timestamps,
+                include_children=include_children)
         while True:
             if not max_usage:
-                mem_usage = _get_memory(
+                mem_usage, timestamp = _get_memory(
                     proc.pid, backend, timestamps=timestamps,
                     include_children=include_children)
 
+                mem_usage = mem_usage - initial_mem_usage
+
                 if stream is not None:
-                    stream.write("MEM {0:.6f} {1:.4f}\n".format(*mem_usage))
+                    stream.write("MEM {0:.6f} {1:.4f}\n".format(mem_usage, timestamp))
 
                     # Write children to the stream file
                     if multiprocess:
